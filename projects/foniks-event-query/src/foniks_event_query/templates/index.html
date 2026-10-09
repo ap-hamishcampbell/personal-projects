@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f3ee">
+    <title>Føniks Event Query</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="identity">
+        <span class="identity-mark" aria-hidden="true">F</span>
+        <div>
+          <p class="eyebrow">LOCAL LOG SEARCH</p>
+          <h1>Føniks Event Query</h1>
+        </div>
+      </div>
+      <div class="connection-state">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span id="source-status" role="status">Checking log source</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="search-section" aria-labelledby="search-heading">
+        <div class="section-heading">
+          <span class="section-index">01</span>
+          <h2 id="search-heading">Find an event</h2>
+        </div>
+        <form id="search-form" class="search-form">
+          <div class="field-group identifier-type">
+            <label for="identifier-field">Identifier</label>
+            <select id="identifier-field" name="field">
+              <option value="eventId">eventId</option>
+              <option value="commandId">commandId</option>
+              <option value="secondaryId">secondaryId</option>
+            </select>
+          </div>
+          <div class="field-group identifier-value">
+            <label for="identifier-value">Value</label>
+            <input id="identifier-value" name="value" type="text" maxlength="512" autocomplete="off" required>
+          </div>
+          <label class="rotation-toggle" for="include-rotations">
+            <input id="include-rotations" name="include_rotations" type="checkbox" checked>
+            <span>Include rotated logs</span>
+          </label>
+          <button class="button button-primary" type="submit">Search records</button>
+        </form>
+        <p id="search-error" class="inline-error" role="alert" hidden></p>
+      </section>
+
+      <section id="search-progress" class="progress-section" aria-live="polite" hidden>
+        <div class="progress-copy">
+          <span id="progress-title">Scanning logs</span>
+          <span id="progress-detail" class="muted"></span>
+        </div>
+        <progress id="scan-progress" max="1" value="0"></progress>
+        <button id="cancel-search" class="button button-secondary" type="button">Cancel search</button>
+      </section>
+
+      <section id="results-section" class="results-section" aria-labelledby="results-heading" hidden>
+        <div class="results-heading">
+          <div class="section-heading">
+            <span class="section-index">02</span>
+            <h2 id="results-heading">Matching records</h2>
+          </div>
+          <p id="result-count" class="result-count" aria-live="polite"></p>
+        </div>
+        <p id="scan-notice" class="scan-notice" role="status" hidden></p>
+        <ol id="result-list" class="result-list"></ol>
+        <nav id="pagination" class="pagination" aria-label="Result pages" hidden>
+          <button id="previous-page" class="button button-secondary" type="button">Previous</button>
+          <span id="page-label" class="page-label"></span>
+          <button id="next-page" class="button button-secondary" type="button">Next</button>
+        </nav>
+      </section>
+    </main>
+    <footer class="page-footer">
+      <span>Føniks Event Query</span>
+      <span>Local session</span>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,1 @@
+"""Query notification payloads from rotated log files."""

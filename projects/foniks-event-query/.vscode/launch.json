@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Føniks Event Query",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "foniks_event_query.app:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--env-file",
+        "${workspaceFolder}/.env"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    }
+  ]
+}

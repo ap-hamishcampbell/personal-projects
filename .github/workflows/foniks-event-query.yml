@@ -1,0 +1,29 @@
+name: Føniks Event Query
+
+on:
+  push:
+    paths:
+      - "projects/foniks-event-query/**"
+      - ".github/workflows/foniks-event-query.yml"
+  pull_request:
+    paths:
+      - "projects/foniks-event-query/**"
+      - ".github/workflows/foniks-event-query.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: projects/foniks-event-query
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest
+      - run: python -m ruff check .
