@@ -1,6 +1,6 @@
 # Personal Projects
 
-Small, self-contained tools maintained in one repository. Each project
+Small, self-contained tools maintained in one personal repository. Each project
 keeps its own dependencies, tests, and setup instructions.
 
 ## Projects
