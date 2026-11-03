@@ -93,6 +93,58 @@ def test_reads_ndjson_and_skips_router_records(tmp_path: Path) -> None:
     assert records[0].line_number == 2
 
 
+def test_candidate_value_skips_unrelated_json_decoding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "MQH-FOENIKS-NOTIFICATION.log"
+    matching = make_log_record('Got message: id : job : {"eventId":"event-456"}')
+    unrelated = make_log_record('Got message: id : job : {"eventId":"other"}')
+    path.write_text(unrelated + "\n" + matching + "\n", encoding="utf-8")
+    original_loads = json.loads
+    decoded_lines = 0
+
+    def count_json_loads(value: str) -> object:
+        nonlocal decoded_lines
+        decoded_lines += 1
+        return original_loads(value)
+
+    monkeypatch.setattr("foniks_event_query.reader.json.loads", count_json_loads)
+
+    records = list(iter_event_records(path, candidate_value="event-456"))
+
+    assert [record.payload for record in records] == [{"eventId": "event-456"}]
+    assert decoded_lines == 2
+
+
+def test_candidate_value_falls_back_for_escaped_identifiers(tmp_path: Path) -> None:
+    path = tmp_path / "MQH-FOENIKS-NOTIFICATION.log"
+    identifier = r"event\456"
+    path.write_text(
+        make_log_record(
+            "Got message: id : job : " + json.dumps({"eventId": identifier})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    records = list(iter_event_records(path, candidate_value=identifier))
+
+    assert [record.payload for record in records] == [{"eventId": identifier}]
+
+
+def test_candidate_value_falls_back_for_escaped_json_punctuation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "MQH-FOENIKS-NOTIFICATION.log"
+    message = 'Got message: id : job : {"eventId":"event<456"}'
+    line = make_log_record(message).replace("event<456", r"event\u003c456")
+    path.write_text(line + "\n", encoding="utf-8")
+
+    records = list(iter_event_records(path, candidate_value="event<456"))
+
+    assert [record.payload for record in records] == [{"eventId": "event<456"}]
+
+
 def test_reports_malformed_outer_json_with_line_number(tmp_path: Path) -> None:
     path = tmp_path / "broken.log"
     path.write_text("not json\n", encoding="utf-8")

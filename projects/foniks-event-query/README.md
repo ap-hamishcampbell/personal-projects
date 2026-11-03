@@ -25,6 +25,18 @@ Edit `.env` and set `LOG_DIRECTORY` to a folder the current Windows account can
 read. The local `.env` file is ignored by Git. No credentials are stored by the
 application.
 
+You can also paste a local or UNC network path into **Log directory** in the
+browser, or use **Browse...** to open the native folder picker on the machine
+running the app. Click **Save directory** to validate access and apply the path.
+Changes are saved to the `.env` file in the server's working directory and take
+precedence over `LOG_DIRECTORY` in the process environment on subsequent starts.
+Start the server from this project directory consistently. The account running
+the app needs write permission to `.env` and read permission to the log folder.
+An explicit directory supplied to `create_app` takes precedence at startup.
+Changing folders is blocked until any running search finishes or is cancelled;
+previous results remain available. If a desktop folder picker is unavailable,
+paste the path instead. Browsing selects only a path; no logs are uploaded.
+
 ## Run
 
 ```powershell

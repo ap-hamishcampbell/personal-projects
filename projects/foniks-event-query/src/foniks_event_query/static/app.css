@@ -126,6 +126,45 @@ main {
   border-bottom: 1px solid #d9d5ce;
 }
 
+.source-settings {
+  padding: 12px 0;
+  border-bottom: 1px solid #d9d5ce;
+}
+
+.source-settings summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  color: #464646;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.directory-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-settings[open] .directory-summary {
+  display: none;
+}
+
+.directory-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.directory-form .field-group {
+  flex: 1 1 300px;
+}
+
 .section-heading {
   gap: 12px;
 }

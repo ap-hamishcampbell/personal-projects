@@ -96,6 +96,12 @@ class SearchService:
             thread.start()
             return job
 
+    def is_running(self) -> bool:
+        with self._lock:
+            return any(
+                job.status in {"queued", "running"} for job in self._jobs.values()
+            )
+
     def get(self, job_id: str) -> SearchJob:
         with self._lock:
             self._expire_jobs()
@@ -173,7 +179,9 @@ class SearchService:
         with job.lock:
             job.status = "running"
             job.started_at = datetime.now(UTC)
+        connection: sqlite3.Connection | None = None
         try:
+            connection = sqlite3.connect(job.database_path, timeout=2)
             files = discover_log_files(
                 self.log_directory, job.request.include_rotations
             )
@@ -188,14 +196,16 @@ class SearchService:
                         path,
                         stop_event=job.stop_event,
                         on_line=lambda: self._increment_lines(job),
+                        candidate_value=job.request.value,
                     ):
                         if record.payload.get(job.request.field) == job.request.value:
-                            self._store_match(job, record)
+                            self._store_match(job, record, connection)
                 except (OSError, UnicodeError, LogRecordError) as error:
                     self._add_warning(job, self._warning_for(path, error))
                 finally:
                     with job.lock:
                         job.files_scanned += 1
+            connection.commit()
             with job.lock:
                 job.current_file = None
                 job.status = "cancelled" if job.stop_event.is_set() else "completed"
@@ -208,6 +218,8 @@ class SearchService:
                 job.warnings.append("The search could not be completed.")
                 job.status = "failed"
         finally:
+            if connection is not None:
+                connection.close()
             with job.lock:
                 job.current_file = None
                 job.finished_at = datetime.now(UTC)
@@ -229,23 +241,20 @@ class SearchService:
         return f"{path.name}: the file could not be read completely."
 
     @staticmethod
-    def _store_match(job: SearchJob, record: EventRecord) -> None:
+    def _store_match(
+        job: SearchJob, record: EventRecord, connection: sqlite3.Connection
+    ) -> None:
         payload_json = json.dumps(record.payload, ensure_ascii=False, indent=2)
         with job.lock:
-            connection = sqlite3.connect(job.database_path, timeout=2)
-            try:
-                connection.execute(
-                    "INSERT INTO results "
-                    "(timestamp, source_file, line_number, payload_json) "
-                    "VALUES (?, ?, ?, ?)",
-                    (
-                        record.timestamp,
-                        record.source_file,
-                        record.line_number,
-                        payload_json,
-                    ),
-                )
-                connection.commit()
-            finally:
-                connection.close()
+            connection.execute(
+                "INSERT INTO results "
+                "(timestamp, source_file, line_number, payload_json) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    record.timestamp,
+                    record.source_file,
+                    record.line_number,
+                    payload_json,
+                ),
+            )
             job.matches += 1

@@ -14,10 +14,94 @@ const pageLabel = document.querySelector("#page-label");
 const previousButton = document.querySelector("#previous-page");
 const nextButton = document.querySelector("#next-page");
 const cancelButton = document.querySelector("#cancel-search");
+const directoryForm = document.querySelector("#directory-form");
+const directoryInput = document.querySelector("#log-directory");
+const directorySummary = document.querySelector("#directory-summary");
+const browseButton = document.querySelector("#browse-directory");
+const directoryError = document.querySelector("#directory-error");
+const directoryNotice = document.querySelector("#directory-notice");
 
 const pageSize = 25;
 let activeSearchId = null;
 let currentOffset = 0;
+let directoryBusy = false;
+let searching = false;
+
+function updateControls() {
+  for (const control of directoryForm.elements) {
+    control.disabled = directoryBusy || searching;
+  }
+  form.querySelector('button[type="submit"]').disabled = directoryBusy;
+}
+
+function setDirectoryError(message) {
+  directoryError.textContent = message;
+  directoryError.hidden = !message;
+}
+
+function setDirectorySummary(directory) {
+  directorySummary.textContent = directory || "Not configured";
+  directorySummary.title = directory || "Not configured";
+}
+
+async function refreshHealth() {
+  const health = await requestJson("/api/health");
+  sourceStatus.textContent = health.available
+    ? "Log source available"
+    : health.configured
+      ? "Log source unavailable"
+      : "Local configuration needed";
+  sourceStatus.parentElement.classList.toggle("is-ready", health.available);
+}
+
+directoryForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  directoryBusy = true;
+  updateControls();
+  setDirectoryError("");
+  directoryNotice.hidden = true;
+  try {
+    const settings = await requestJson("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ directory: directoryInput.value }),
+    });
+    directoryInput.value = settings.directory;
+    setDirectorySummary(settings.directory);
+    directoryNotice.textContent = "Directory saved. New searches will use this folder.";
+    directoryNotice.hidden = false;
+    await refreshHealth();
+  } catch (error) {
+    setDirectoryError(error.message);
+  } finally {
+    directoryBusy = false;
+    updateControls();
+  }
+});
+
+browseButton.addEventListener("click", async () => {
+  directoryBusy = true;
+  updateControls();
+  setDirectoryError("");
+  directoryNotice.textContent = "Select a folder in the folder picker on the machine running the app.";
+  directoryNotice.hidden = false;
+  try {
+    const selection = await requestJson("/api/settings/browse", { method: "POST" });
+    if (selection.directory) {
+      directoryInput.value = selection.directory;
+      setDirectorySummary(selection.directory);
+      directoryNotice.textContent = "Folder selected. Click Save directory to apply it.";
+    } else {
+      directoryNotice.hidden = true;
+    }
+  } catch (error) {
+    directoryNotice.hidden = true;
+    setDirectoryError(error.message);
+  } finally {
+    directoryBusy = false;
+    updateControls();
+  }
+});
 
 async function requestJson(url, options) {
   const response = await fetch(url, options);
@@ -126,6 +210,8 @@ async function pollSearch(searchId) {
       return;
     }
     progressSection.hidden = true;
+    searching = false;
+    updateControls();
     cancelButton.disabled = true;
     if (job.status === "failed") {
       setError(job.warnings.join(" ") || "The search failed.");
@@ -134,12 +220,16 @@ async function pollSearch(searchId) {
     await loadPage(0);
   } catch (error) {
     progressSection.hidden = true;
+    searching = false;
+    updateControls();
     setError(error.message);
   }
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  searching = true;
+  updateControls();
   setError("");
   scanNotice.hidden = true;
   resultsSection.hidden = true;
@@ -162,6 +252,8 @@ form.addEventListener("submit", async (event) => {
     updateProgress(job);
     pollSearch(job.id);
   } catch (error) {
+    searching = false;
+    updateControls();
     setError(error.message);
   }
 });
@@ -179,15 +271,13 @@ cancelButton.addEventListener("click", async () => {
 previousButton.addEventListener("click", () => loadPage(Math.max(0, currentOffset - pageSize)));
 nextButton.addEventListener("click", () => loadPage(currentOffset + pageSize));
 
-requestJson("/api/health")
-  .then((health) => {
-    sourceStatus.textContent = health.available
-      ? "Log source available"
-      : health.configured
-        ? "Log source unavailable"
-        : "Local configuration needed";
-    sourceStatus.parentElement.classList.toggle("is-ready", health.available);
-  })
-  .catch(() => {
-    sourceStatus.textContent = "Log source status unknown";
-  });
+Promise.all([
+  refreshHealth(),
+  requestJson("/api/settings").then((settings) => {
+    directoryInput.value = settings.directory || "";
+    setDirectorySummary(settings.directory);
+  }),
+]).catch((error) => {
+  sourceStatus.textContent = "Log source status unknown";
+  setDirectoryError(error.message);
+});

@@ -63,7 +63,18 @@ def iter_event_records(
     path: Path,
     stop_event: Event | None = None,
     on_line: Callable[[], None] | None = None,
+    candidate_value: str | None = None,
 ) -> Iterator[EventRecord]:
+    raw_candidate = (
+        candidate_value
+        if candidate_value
+        and candidate_value.isascii()
+        and all(
+            character.isalnum() or character in "-._~"
+            for character in candidate_value
+        )
+        else None
+    )
     with path.open("r", encoding="utf-8") as log_file:
         for line_number, line in enumerate(log_file, start=1):
             if stop_event is not None and stop_event.is_set():
@@ -71,6 +82,8 @@ def iter_event_records(
             if on_line is not None:
                 on_line()
             if not line.strip():
+                continue
+            if raw_candidate is not None and raw_candidate not in line:
                 continue
             try:
                 outer_record = json.loads(line)

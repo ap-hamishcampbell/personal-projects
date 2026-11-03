@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import uvicorn
+from dotenv import dotenv_values, set_key
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
 
 from foniks_event_query.service import (
     SearchAlreadyRunning,
@@ -23,21 +26,58 @@ PACKAGE_DIRECTORY = Path(__file__).parent
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
+class DirectoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    directory: str = Field(min_length=1, max_length=32767)
+
+
+def choose_directory() -> str | None:
+    import tkinter
+    from tkinter import filedialog
+
+    try:
+        root = tkinter.Tk()
+    except tkinter.TclError as error:
+        raise RuntimeError("Folder picker unavailable") from error
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.update_idletasks()
+        root.lift()
+        return filedialog.askdirectory(
+            parent=root, title="Select notification log directory", mustexist=True
+        ) or None
+    except tkinter.TclError as error:
+        raise RuntimeError("Folder picker unavailable") from error
+    finally:
+        root.destroy()
+
+
 def create_app(
     log_directory: Path | None = None,
     service: SearchService | None = None,
+    config_path: Path | None = None,
 ) -> FastAPI:
-    owns_service = service is None
+    settings_path = (config_path or Path.cwd() / ".env").resolve()
+    configuration_lock = threading.Lock()
+    picker_lock = threading.Lock()
+    owned_services: list[SearchService] = []
     if service is None:
-        configured_directory = log_directory or os.environ.get("LOG_DIRECTORY")
+        configured_directory = (
+            log_directory
+            or dotenv_values(settings_path).get("LOG_DIRECTORY")
+            or os.environ.get("LOG_DIRECTORY")
+        )
         if configured_directory:
             service = SearchService(Path(configured_directory))
+            owned_services.append(service)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         yield
-        if owns_service and service is not None:
-            service.close()
+        for owned_service in owned_services:
+            owned_service.close()
 
     app = FastAPI(title="Føniks Event Query", lifespan=lifespan)
     app.state.search_service = service
@@ -81,7 +121,7 @@ def create_app(
         if configured_service is None:
             raise HTTPException(
                 status_code=503,
-                detail="Set LOG_DIRECTORY in the local .env file before searching.",
+                detail="Choose and save a log directory before searching.",
             )
         return configured_service
 
@@ -90,7 +130,7 @@ def create_app(
         return FileResponse(PACKAGE_DIRECTORY / "templates" / "index.html")
 
     @app.get("/api/health")
-    async def health() -> dict[str, bool]:
+    def health() -> dict[str, bool]:
         configured_service = app.state.search_service
         directory_available = (
             configured_service is not None
@@ -101,10 +141,78 @@ def create_app(
             "available": directory_available,
         }
 
-    @app.post("/api/search")
-    async def start_search(search_request: SearchRequest) -> dict[str, object]:
+    @app.get("/api/settings")
+    def settings() -> dict[str, str | None]:
+        configured_service = app.state.search_service
+        return {
+            "directory": (
+                str(configured_service.log_directory)
+                if configured_service is not None else None
+            )
+        }
+
+    @app.post("/api/settings/browse")
+    def browse_directory() -> dict[str, str | None]:
+        if not picker_lock.acquire(blocking=False):
+            raise HTTPException(
+                status_code=409, detail="A folder picker is already open."
+            )
         try:
-            job = get_service().start(search_request)
+            try:
+                return {"directory": choose_directory()}
+            except (ImportError, RuntimeError) as error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Folder picker unavailable. Paste a directory path instead.",
+                ) from error
+        finally:
+            picker_lock.release()
+
+    @app.put("/api/settings")
+    def save_directory(request: DirectoryRequest) -> dict[str, str]:
+        value = request.directory.strip()
+        if not value or "\0" in value:
+            raise HTTPException(status_code=422, detail="Enter a directory path.")
+        directory = Path(value)
+        if not directory.is_absolute():
+            raise HTTPException(
+                status_code=422, detail="Enter an absolute directory path."
+            )
+        with configuration_lock:
+            configured_service = app.state.search_service
+            if configured_service is not None and configured_service.is_running():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Finish or cancel the search before changing directory.",
+                )
+            try:
+                with os.scandir(directory):
+                    pass
+            except OSError as error:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"The directory could not be read: {error.strerror}",
+                ) from error
+            try:
+                set_key(str(settings_path), "LOG_DIRECTORY", str(directory))
+            except OSError as error:
+                raise HTTPException(
+                    status_code=500,
+                    detail="The directory could not be saved to the local .env file.",
+                ) from error
+            if configured_service is None:
+                configured_service = SearchService(directory)
+                owned_services.append(configured_service)
+                app.state.search_service = configured_service
+            else:
+                configured_service.log_directory = directory
+            return {"directory": str(directory)}
+
+    @app.post("/api/search")
+    def start_search(search_request: SearchRequest) -> dict[str, object]:
+        try:
+            with configuration_lock:
+                job = get_service().start(search_request)
         except SearchAlreadyRunning as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except ValueError as error:

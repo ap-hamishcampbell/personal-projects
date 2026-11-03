@@ -24,6 +24,23 @@
     </header>
 
     <main>
+      <details class="source-settings">
+        <summary>
+          <span>Log directory</span>
+          <span id="directory-summary" class="directory-summary">Loading...</span>
+        </summary>
+        <form id="directory-form" class="directory-form">
+          <div class="field-group">
+            <label for="log-directory">Directory path</label>
+            <input id="log-directory" name="directory" type="text" autocomplete="off" required aria-describedby="directory-help">
+          </div>
+          <button id="browse-directory" class="button button-secondary" type="button">Browse...</button>
+          <button class="button button-primary" type="submit">Save directory</button>
+        </form>
+        <p id="directory-help" class="muted">Paste a local or network folder path, or browse on this machine. Save to apply it now and after restarting.</p>
+        <p id="directory-error" class="inline-error" role="alert" hidden></p>
+        <p id="directory-notice" role="status" hidden></p>
+      </details>
       <section class="search-section" aria-labelledby="search-heading">
         <div class="section-heading">
           <span class="section-index">01</span>
